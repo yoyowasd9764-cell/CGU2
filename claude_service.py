@@ -8,7 +8,7 @@ import anthropic
 from tools import ALL_TOOLS, dispatch_tool
 
 import os
-CLAUDE_MODEL = "claude-opus-4-7"
+CLAUDE_MODEL = "claude-haiku-4-5"
 CLAUDE_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 SYSTEM_PROMPT = f"""你是一個 ERP 查詢助理，幫主管查詢公司的財務和採購資料。

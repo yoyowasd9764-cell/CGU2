@@ -2,12 +2,13 @@
 main.py - FastAPI 應用程式
 提供 REST API 和 HTML 問答介面
 """
+import os
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from claude_service import ask_erp
 
-app = FastAPI(title="ERP 人話查詢系統", version="1.0.0")
+app = FastAPI(title="ERP 人話查詢系統", version="2.0.0")
 
 
 class QuestionRequest(BaseModel):
@@ -20,7 +21,6 @@ class AnswerResponse(BaseModel):
 
 @app.post("/ask", response_model=AnswerResponse)
 async def ask_question(request: QuestionRequest):
-    """接收自然語言問題，回傳自然語言答案"""
     if not request.question.strip():
         raise HTTPException(status_code=400, detail="問題不能為空")
     try:
@@ -30,341 +30,362 @@ async def ask_question(request: QuestionRequest):
         raise HTTPException(status_code=500, detail=f"查詢失敗：{str(e)}")
 
 
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    """ERP 人話查詢介面"""
-    html = """
-<!DOCTYPE html>
+    html = r"""<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ERP 人話查詢系統</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ERP 智慧查詢</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117;
+    --sidebar: #161b22;
+    --border: #30363d;
+    --accent: #2f81f7;
+    --accent2: #1f6feb;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --user-bubble: #1f6feb;
+    --ai-bubble: #21262d;
+    --hover: #21262d;
+    --radius: 12px;
+    --shadow: 0 8px 32px rgba(0,0,0,.4);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: 'Microsoft JhengHei','PingFang TC','Segoe UI',sans-serif; background: var(--bg); color: var(--text); }
 
-        body {
-            font-family: 'Microsoft JhengHei', 'PingFang TC', sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
+  /* ── 版面 ── */
+  .layout { display: flex; height: 100vh; }
 
-        .container {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 20px;
-            padding: 40px;
-            width: 100%;
-            max-width: 800px;
-            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
-        }
+  /* ── 側欄 ── */
+  .sidebar {
+    width: 260px; min-width: 260px;
+    background: var(--sidebar);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    padding: 20px 14px;
+    gap: 8px;
+  }
+  .sidebar-logo {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 6px 16px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+  }
+  .sidebar-logo .icon { font-size: 1.6rem; }
+  .sidebar-logo .title { font-size: 1rem; font-weight: 700; line-height: 1.2; }
+  .sidebar-logo .sub { font-size: .72rem; color: var(--muted); }
+  .section-label { font-size: .72rem; color: var(--muted); letter-spacing: 1px; padding: 4px 6px; text-transform: uppercase; }
+  .quick-btn {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 10px; border-radius: 8px;
+    cursor: pointer; font-size: .85rem; color: var(--text);
+    transition: background .15s;
+    border: none; background: transparent; text-align: left; width: 100%;
+  }
+  .quick-btn:hover { background: var(--hover); }
+  .quick-btn .q-icon { font-size: 1rem; width: 20px; text-align: center; flex-shrink: 0; }
+  .sidebar-footer { margin-top: auto; font-size: .72rem; color: var(--muted); padding: 8px 6px; border-top: 1px solid var(--border); }
 
-        .header {
-            text-align: center;
-            margin-bottom: 35px;
-        }
+  /* ── 主區 ── */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 
-        .header h1 {
-            font-size: 2rem;
-            font-weight: 700;
-            color: #ffffff;
-            letter-spacing: 2px;
-            text-shadow: 0 0 20px rgba(100, 200, 255, 0.5);
-        }
+  /* 頂欄 */
+  .topbar {
+    padding: 14px 24px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--sidebar);
+  }
+  .topbar-title { font-size: 1rem; font-weight: 600; }
+  .topbar-badge { font-size: .72rem; background: var(--accent); color: #fff; padding: 2px 8px; border-radius: 20px; }
 
-        .header .subtitle {
-            color: rgba(255,255,255,0.6);
-            margin-top: 8px;
-            font-size: 0.95rem;
-        }
+  /* 對話區 */
+  .chat-area { flex: 1; overflow-y: auto; padding: 28px 0; scroll-behavior: smooth; }
+  .chat-inner { max-width: 760px; margin: 0 auto; padding: 0 24px; display: flex; flex-direction: column; gap: 24px; }
 
-        .icon {
-            font-size: 3rem;
-            margin-bottom: 10px;
-        }
+  /* 歡迎畫面 */
+  .welcome {
+    text-align: center; padding: 60px 20px;
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+  }
+  .welcome .w-icon { font-size: 3.5rem; }
+  .welcome h2 { font-size: 1.5rem; font-weight: 700; }
+  .welcome p { color: var(--muted); font-size: .92rem; }
+  .welcome-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; width: 100%; max-width: 520px; }
+  .welcome-card {
+    background: var(--ai-bubble); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px;
+    cursor: pointer; text-align: left; transition: border-color .2s, background .2s;
+    font-size: .85rem; color: var(--text);
+  }
+  .welcome-card:hover { border-color: var(--accent); background: #1c2128; }
+  .welcome-card .wc-icon { font-size: 1.2rem; margin-bottom: 6px; }
+  .welcome-card .wc-text { color: var(--muted); font-size: .78rem; margin-top: 3px; }
 
-        .examples {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-bottom: 20px;
-        }
+  /* 訊息氣泡 */
+  .msg { display: flex; gap: 12px; align-items: flex-start; }
+  .msg.user { flex-direction: row-reverse; }
+  .avatar {
+    width: 34px; height: 34px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem; flex-shrink: 0;
+  }
+  .avatar.ai { background: linear-gradient(135deg,#2f81f7,#8b5cf6); }
+  .avatar.user { background: linear-gradient(135deg,#f97316,#ec4899); }
+  .bubble {
+    max-width: 82%; padding: 13px 16px; border-radius: var(--radius);
+    line-height: 1.7; font-size: .93rem;
+  }
+  .msg.user .bubble { background: var(--user-bubble); border-radius: var(--radius) 4px var(--radius) var(--radius); }
+  .msg.ai  .bubble { background: var(--ai-bubble); border: 1px solid var(--border); border-radius: 4px var(--radius) var(--radius) var(--radius); }
 
-        .example-btn {
-            background: rgba(100, 150, 255, 0.15);
-            border: 1px solid rgba(100, 150, 255, 0.3);
-            color: rgba(255, 255, 255, 0.8);
-            padding: 6px 14px;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 0.85rem;
-            font-family: inherit;
-            transition: all 0.2s;
-        }
+  /* Markdown 樣式 */
+  .bubble h1,.bubble h2,.bubble h3 { margin: 12px 0 6px; }
+  .bubble h2 { font-size: 1rem; color: #79c0ff; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+  .bubble h3 { font-size: .92rem; color: #d2a8ff; }
+  .bubble p  { margin: 6px 0; }
+  .bubble ul,.bubble ol { padding-left: 20px; margin: 6px 0; }
+  .bubble li { margin: 3px 0; }
+  .bubble strong { color: #ffa657; }
+  .bubble code { background: #0d1117; border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-size: .85em; }
+  .bubble table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: .85rem; }
+  .bubble th { background: #1c2128; padding: 6px 10px; text-align: left; border: 1px solid var(--border); }
+  .bubble td { padding: 5px 10px; border: 1px solid var(--border); }
 
-        .example-btn:hover {
-            background: rgba(100, 150, 255, 0.3);
-            border-color: rgba(100, 150, 255, 0.6);
-            color: white;
-        }
+  /* 思考中 */
+  .thinking { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .87rem; }
+  .dots { display: flex; gap: 4px; }
+  .dots span { width: 6px; height: 6px; background: var(--accent); border-radius: 50%; animation: blink 1.2s ease-in-out infinite; }
+  .dots span:nth-child(2) { animation-delay: .2s; }
+  .dots span:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%,80%,100%{opacity:.2} 40%{opacity:1} }
 
-        .input-area {
-            position: relative;
-            margin-bottom: 15px;
-        }
+  /* 輸入列 */
+  .input-bar {
+    padding: 16px 24px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--sidebar);
+  }
+  .input-inner {
+    max-width: 760px; margin: 0 auto;
+    display: flex; gap: 10px; align-items: flex-end;
+  }
+  .input-wrap { flex: 1; position: relative; }
+  textarea#q {
+    width: 100%; padding: 12px 16px;
+    background: var(--ai-bubble); border: 1px solid var(--border);
+    border-radius: var(--radius); color: var(--text);
+    font-family: inherit; font-size: .95rem; resize: none;
+    min-height: 50px; max-height: 160px; line-height: 1.5;
+    outline: none; transition: border-color .2s;
+  }
+  textarea#q:focus { border-color: var(--accent); }
+  textarea#q::placeholder { color: var(--muted); }
+  .send-btn {
+    width: 46px; height: 46px; border-radius: 10px;
+    background: var(--accent); border: none;
+    color: #fff; font-size: 1.2rem; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; transition: background .15s, transform .1s;
+  }
+  .send-btn:hover:not(:disabled) { background: var(--accent2); transform: scale(1.05); }
+  .send-btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+  .input-hint { text-align: center; color: var(--muted); font-size: .72rem; margin-top: 8px; }
 
-        textarea {
-            width: 100%;
-            padding: 16px 50px 16px 18px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 12px;
-            background: rgba(255, 255, 255, 0.08);
-            color: white;
-            font-size: 1rem;
-            font-family: inherit;
-            resize: vertical;
-            min-height: 80px;
-            line-height: 1.5;
-            transition: border-color 0.2s;
-            outline: none;
-        }
+  /* 手機響應 */
+  @media(max-width: 640px) {
+    .sidebar { display: none; }
+    .welcome-grid { grid-template-columns: 1fr; }
+  }
+  @media(max-width: 480px) {
+    .chat-inner, .input-inner { padding: 0 14px; }
+  }
 
-        textarea::placeholder {
-            color: rgba(255, 255, 255, 0.4);
-        }
-
-        textarea:focus {
-            border-color: rgba(100, 150, 255, 0.6);
-            background: rgba(255, 255, 255, 0.1);
-        }
-
-        .btn {
-            width: 100%;
-            padding: 14px;
-            background: linear-gradient(135deg, #4a90d9, #5b6abf);
-            color: white;
-            border: none;
-            border-radius: 12px;
-            font-size: 1.05rem;
-            font-weight: 600;
-            font-family: inherit;
-            cursor: pointer;
-            transition: all 0.2s;
-            letter-spacing: 1px;
-        }
-
-        .btn:hover:not(:disabled) {
-            background: linear-gradient(135deg, #5ba3e8, #6c7bd0);
-            transform: translateY(-1px);
-            box-shadow: 0 8px 20px rgba(74, 144, 217, 0.3);
-        }
-
-        .btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .loading {
-            text-align: center;
-            color: rgba(255,255,255,0.7);
-            padding: 20px;
-            display: none;
-        }
-
-        .loading-dots {
-            display: inline-flex;
-            gap: 6px;
-            align-items: center;
-        }
-
-        .loading-dots span {
-            width: 8px;
-            height: 8px;
-            background: #4a90d9;
-            border-radius: 50%;
-            animation: bounce 1.2s ease-in-out infinite;
-        }
-
-        .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
-        .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
-
-        @keyframes bounce {
-            0%, 60%, 100% { transform: translateY(0); }
-            30% { transform: translateY(-10px); }
-        }
-
-        .answer-box {
-            margin-top: 25px;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            border-radius: 12px;
-            padding: 20px;
-            display: none;
-        }
-
-        .answer-box.show { display: block; }
-
-        .answer-label {
-            font-size: 0.8rem;
-            color: rgba(100, 200, 255, 0.8);
-            letter-spacing: 1px;
-            margin-bottom: 10px;
-            font-weight: 600;
-        }
-
-        .answer-content {
-            color: rgba(255, 255, 255, 0.9);
-            line-height: 1.8;
-            font-size: 0.98rem;
-            white-space: pre-wrap;
-        }
-
-        .error-box {
-            margin-top: 15px;
-            background: rgba(255, 100, 100, 0.1);
-            border: 1px solid rgba(255, 100, 100, 0.3);
-            border-radius: 12px;
-            padding: 15px;
-            color: #ff8888;
-            display: none;
-        }
-
-        .error-box.show { display: block; }
-
-        .footer {
-            text-align: center;
-            margin-top: 25px;
-            color: rgba(255,255,255,0.3);
-            font-size: 0.8rem;
-        }
-
-        .hint {
-            color: rgba(255,255,255,0.4);
-            font-size: 0.82rem;
-            margin-top: 8px;
-            text-align: right;
-        }
-    </style>
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <div class="icon">🤖</div>
-            <h1>ERP 人話查詢系統</h1>
-            <p class="subtitle">用自然語言詢問公司財務與採購資料</p>
-        </div>
+<div class="layout">
 
-        <div class="examples">
-            <button class="example-btn" onclick="setQuestion('下周有多少廠商的貨要進來？')">📦 下周到貨</button>
-            <button class="example-btn" onclick="setQuestion('銀行帳戶目前有多少錢？')">🏦 銀行餘額</button>
-            <button class="example-btn" onclick="setQuestion('本年度銷售金額是多少？')">📊 年度銷售</button>
-            <button class="example-btn" onclick="setQuestion('目前有哪些未收的應收帳款？')">💰 應收帳款</button>
-            <button class="example-btn" onclick="setQuestion('本月進貨總額是多少？')">🚚 本月進貨</button>
-            <button class="example-btn" onclick="setQuestion('有哪些逾期未收的客戶帳款？')">⚠️ 逾期帳款</button>
-        </div>
-
-        <div class="input-area">
-            <textarea
-                id="question"
-                placeholder="請輸入您的問題，例如：下周有多少廠商的貨要進來？"
-                rows="3"
-            ></textarea>
-        </div>
-
-        <p class="hint">按 Ctrl+Enter 送出 | Enter 換行</p>
-
-        <button class="btn" id="submitBtn" onclick="submitQuestion()">
-            送出查詢
-        </button>
-
-        <div class="loading" id="loading">
-            <div class="loading-dots">
-                <span></span><span></span><span></span>
-            </div>
-            <p style="margin-top: 10px;">AI 正在查詢資料庫，請稍候...</p>
-        </div>
-
-        <div class="error-box" id="errorBox"></div>
-
-        <div class="answer-box" id="answerBox">
-            <div class="answer-label">▎ AI 回答</div>
-            <div class="answer-content" id="answerContent"></div>
-        </div>
-
-        <div class="footer">
-            Powered by Claude claude-opus-4-7 + SQL Server ERP
-        </div>
+  <!-- 側欄 -->
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      <div class="icon">🏭</div>
+      <div>
+        <div class="title">ERP 智慧查詢</div>
+        <div class="sub">Natural Language ERP</div>
+      </div>
     </div>
 
-    <script>
-        const questionEl = document.getElementById('question');
-        const submitBtn = document.getElementById('submitBtn');
-        const loadingEl = document.getElementById('loading');
-        const answerBox = document.getElementById('answerBox');
-        const answerContent = document.getElementById('answerContent');
-        const errorBox = document.getElementById('errorBox');
+    <div class="section-label">常用查詢</div>
+    <button class="quick-btn" onclick="send('下周有多少廠商的貨要進來？')"><span class="q-icon">📦</span>下周到貨清單</button>
+    <button class="quick-btn" onclick="send('銀行帳戶目前有多少錢？')"><span class="q-icon">🏦</span>銀行帳戶餘額</button>
+    <button class="quick-btn" onclick="send('本年度的銷售收入是多少？')"><span class="q-icon">📊</span>年度銷售收入</button>
+    <button class="quick-btn" onclick="send('目前有哪些未收的應收帳款？')"><span class="q-icon">💰</span>應收帳款明細</button>
+    <button class="quick-btn" onclick="send('本月的進貨總金額是多少？')"><span class="q-icon">🚚</span>本月進貨總額</button>
+    <button class="quick-btn" onclick="send('有哪些採購訂單還有未到貨數量？')"><span class="q-icon">📋</span>未到貨採購單</button>
+    <button class="quick-btn" onclick="send('現金及銀行存款的科目餘額？')"><span class="q-icon">💳</span>現金銀行科目</button>
+    <button class="quick-btn" onclick="send('本年度的費用支出是多少？')"><span class="q-icon">📉</span>年度費用支出</button>
 
-        // Ctrl+Enter 送出
-        questionEl.addEventListener('keydown', function(e) {
-            if (e.ctrlKey && e.key === 'Enter') {
-                submitQuestion();
-            }
-        });
+    <div class="sidebar-footer">
+      Powered by Claude Haiku 4.5<br>+ SQL Server ERP
+    </div>
+  </div>
 
-        function setQuestion(text) {
-            questionEl.value = text;
-            questionEl.focus();
-        }
+  <!-- 主區 -->
+  <div class="main">
+    <div class="topbar">
+      <span class="topbar-title">🤖 AI 查詢助理</span>
+      <span class="topbar-badge">claude-haiku-4-5</span>
+    </div>
 
-        async function submitQuestion() {
-            const question = questionEl.value.trim();
-            if (!question) {
-                questionEl.focus();
-                return;
-            }
+    <div class="chat-area" id="chatArea">
+      <div class="chat-inner" id="chatInner">
+        <!-- 歡迎畫面 -->
+        <div class="welcome" id="welcome">
+          <div class="w-icon">🏭</div>
+          <h2>您好，請問有什麼可以幫您查詢的？</h2>
+          <p>用自然語言詢問財務、採購、應收帳款等任何 ERP 資料</p>
+          <div class="welcome-grid">
+            <div class="welcome-card" onclick="send('下周有多少廠商的貨要進來？')">
+              <div class="wc-icon">📦</div>
+              <div>下周到貨清單</div>
+              <div class="wc-text">查詢採購訂單預計到貨</div>
+            </div>
+            <div class="welcome-card" onclick="send('銀行帳戶目前有多少錢？')">
+              <div class="wc-icon">🏦</div>
+              <div>銀行帳戶餘額</div>
+              <div class="wc-text">查詢現金及銀行存款</div>
+            </div>
+            <div class="welcome-card" onclick="send('本年度的銷售收入是多少？')">
+              <div class="wc-icon">📊</div>
+              <div>年度銷售收入</div>
+              <div class="wc-text">查詢分類帳收入科目</div>
+            </div>
+            <div class="welcome-card" onclick="send('目前有哪些未收的應收帳款？')">
+              <div class="wc-icon">💰</div>
+              <div>應收帳款明細</div>
+              <div class="wc-text">查詢客戶未收款項</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
-            // Reset UI
-            submitBtn.disabled = true;
-            loadingEl.style.display = 'block';
-            answerBox.classList.remove('show');
-            errorBox.classList.remove('show');
+    <div class="input-bar">
+      <div class="input-inner">
+        <div class="input-wrap">
+          <textarea id="q" rows="1" placeholder="請輸入問題，例如：下周有多少廠商的貨要進來？" oninput="autoResize(this)"></textarea>
+        </div>
+        <button class="send-btn" id="sendBtn" onclick="submit()" title="送出 (Ctrl+Enter)">➤</button>
+      </div>
+      <div class="input-hint">Ctrl + Enter 送出</div>
+    </div>
+  </div>
+</div>
 
-            try {
-                const response = await fetch('/ask', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ question }),
-                });
+<script>
+const chatInner = document.getElementById('chatInner');
+const welcome   = document.getElementById('welcome');
+const chatArea  = document.getElementById('chatArea');
+const qEl       = document.getElementById('q');
+const sendBtn   = document.getElementById('sendBtn');
 
-                const data = await response.json();
+// Ctrl+Enter
+qEl.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); submit(); }
+});
 
-                if (!response.ok) {
-                    throw new Error(data.detail || '查詢失敗');
-                }
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+}
 
-                answerContent.textContent = data.answer;
-                answerBox.classList.add('show');
-            } catch (err) {
-                errorBox.textContent = '❌ 錯誤：' + err.message;
-                errorBox.classList.add('show');
-            } finally {
-                submitBtn.disabled = false;
-                loadingEl.style.display = 'none';
-            }
-        }
-    </script>
+function send(text) {
+  qEl.value = text;
+  autoResize(qEl);
+  submit();
+}
+
+function addMsg(role, html) {
+  if (role === 'user' && welcome) welcome.style.display = 'none';
+  const isUser = role === 'user';
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+  div.innerHTML = `
+    <div class="avatar ${role}">${isUser ? '👤' : '🤖'}</div>
+    <div class="bubble">${html}</div>
+  `;
+  chatInner.appendChild(div);
+  chatArea.scrollTop = chatArea.scrollHeight;
+  return div;
+}
+
+function addThinking() {
+  const div = document.createElement('div');
+  div.className = 'msg ai';
+  div.id = 'thinking';
+  div.innerHTML = `
+    <div class="avatar ai">🤖</div>
+    <div class="bubble thinking">
+      <div class="dots"><span></span><span></span><span></span></div>
+      <span>AI 正在查詢資料庫...</span>
+    </div>`;
+  chatInner.appendChild(div);
+  chatArea.scrollTop = chatArea.scrollHeight;
+  return div;
+}
+
+async function submit() {
+  const q = qEl.value.trim();
+  if (!q || sendBtn.disabled) return;
+
+  addMsg('user', escHtml(q));
+  qEl.value = ''; qEl.style.height = 'auto';
+
+  sendBtn.disabled = true;
+  const thinking = addThinking();
+
+  try {
+    const res  = await fetch('/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q })
+    });
+    const data = await res.json();
+    thinking.remove();
+    if (!res.ok) throw new Error(data.detail || '查詢失敗');
+    addMsg('ai', marked.parse(data.answer));
+  } catch(err) {
+    thinking.remove();
+    addMsg('ai', `<span style="color:#f85149">❌ ${escHtml(err.message)}</span>`);
+  } finally {
+    sendBtn.disabled = false;
+    qEl.focus();
+    chatArea.scrollTop = chatArea.scrollHeight;
+  }
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+</script>
 </body>
-</html>
-"""
+</html>"""
     return HTMLResponse(content=html)
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port, reload=False)
