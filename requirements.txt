@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+pyodbc
+anthropic
+pydantic
+python-dateutil
