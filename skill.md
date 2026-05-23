@@ -1,19 +1,43 @@
 # erp-query
 
-ERP 人話查詢系統的完整建置、維護與操作說明。
-技術棧：Streamlit + Claude API (claude-haiku-4-5) + SQL Server
+ERP 人話查詢系統完整操作與維護說明。
+支援介面：Streamlit 網頁 + Telegram Bot
+模型：claude-haiku-4-5 + SQL Server (casper linked server)
 
 ---
 
 ## 本機啟動
 
+### Streamlit 網頁介面
 ```bash
 pip install -r requirements.txt
 set ANTHROPIC_API_KEY=sk-ant-api03-...
 python -m streamlit run main.py --server.port 8502
 ```
-
 開啟 http://localhost:8502
+
+### Telegram Bot
+```bash
+set ANTHROPIC_API_KEY=sk-ant-api03-...
+set TELEGRAM_BOT_TOKEN=8984039998:AAF5w24C19Ld...
+python telegram_bot.py
+```
+
+---
+
+## Telegram Bot 建立步驟
+
+1. 在 Telegram 搜尋 **@BotFather**
+2. 傳送 `/newbot`
+3. 輸入 Bot 名稱與帳號（帳號須以 `_bot` 結尾）
+4. 取得 Token，格式：`1234567890:AAHxxx...`
+5. 設定環境變數 `TELEGRAM_BOT_TOKEN` 後執行 `python telegram_bot.py`
+
+**限制授權使用者（選填）：**
+```bash
+set ALLOWED_TELEGRAM_USERS=123456789,987654321
+```
+取得 user_id：在 Telegram 搜尋 @userinfobot，傳任何訊息即可得知。
 
 ---
 
@@ -23,19 +47,29 @@ python -m streamlit run main.py --server.port 8502
 2. **New Project → Add Service → Git → CGU2**
 3. **Variables** 新增：
    - `ANTHROPIC_API_KEY` = `sk-ant-api03-...`
+   - `TELEGRAM_BOT_TOKEN` = `8984039998:AAF5w24C19Ld...`
 4. 等待建置（約 5 分鐘，含安裝 ODBC Driver 17）
-5. **Networking → Generate Domain** 取得公開網址
+5. **Networking → Generate Domain** 取得 Streamlit 網址
 
 ---
 
-## 前端介面說明（main.py）
+## 主管使用方式
 
-使用 Streamlit `st.chat_message` 實作對話介面：
+### Telegram
+搜尋 `@CompanyERP_bot`，直接傳中文問題：
 
-- **左側欄** — 8 個常用快速查詢按鈕 + 清除對話
-- **主區** — 仿 ChatGPT 對話，支援 Markdown 渲染
-- **歡迎卡片** — 首次進入時顯示 4 個範例問題
-- **對話記錄** — 存於 `st.session_state.messages`，重新整理後清除
+| 問題範例 | 查詢工具 |
+|---------|---------|
+| 下周有多少廠商的貨要進來？ | query_purchase_orders |
+| 銀行帳戶目前有多少錢？ | query_account_balance |
+| 本年度的銷售收入是多少？ | query_gl |
+| 哪些客戶還有未收帳款？ | query_ar |
+| 本月進貨總金額是多少？ | query_purchase_receipts |
+
+指令：`/start` 開始、`/help` 說明
+
+### Streamlit 網頁
+開啟網址後，點左側欄快速按鈕，或直接在底部輸入框打問題。
 
 ---
 
@@ -43,22 +77,19 @@ python -m streamlit run main.py --server.port 8502
 
 ```
 ask_erp(question)
-  ├─ 建立 messages = [{role:user, content:question}]
+  ├─ messages = [{role:user, content:question}]
   ├─ loop（最多 10 輪）:
-  │   ├─ 呼叫 Claude API（model + tools + messages）
-  │   ├─ stop_reason == end_turn  → 回傳文字答案
-  │   └─ stop_reason == tool_use  → dispatch_tool() → 加入 tool_result → 繼續
+  │   ├─ Claude API（haiku-4-5 + tools + messages）
+  │   ├─ end_turn   → 回傳文字答案
+  │   └─ tool_use   → dispatch_tool() → tool_result → 繼續
   └─ 回傳最終自然語言答案
 ```
-
-模型：`claude-haiku-4-5`，max_tokens：4096
 
 ---
 
 ## 新增查詢工具（tools.py）
 
 ### Step 1 — Pydantic 輸入參數
-
 ```python
 class NewToolInput(BaseModel):
     date_from: str | None = None   # yyyymmdd
@@ -66,7 +97,6 @@ class NewToolInput(BaseModel):
 ```
 
 ### Step 2 — SQL 執行函式
-
 ```python
 def run_new_tool(params: NewToolInput) -> str:
     conn = get_conn()
@@ -83,7 +113,6 @@ def run_new_tool(params: NewToolInput) -> str:
 ```
 
 ### Step 3 — Tool Schema
-
 ```python
 {
     "name": "new_tool",
@@ -99,7 +128,6 @@ def run_new_tool(params: NewToolInput) -> str:
 ```
 
 ### Step 4 — 加入 dispatcher
-
 ```python
 elif name == "new_tool":
     return run_new_tool(NewToolInput(**inputs))
@@ -147,7 +175,8 @@ git push
 | 問題 | 原因 | 解法 |
 |------|------|------|
 | `ODBC Driver not found` | 未安裝驅動 | 安裝 ODBC Driver 17 for SQL Server |
-| `AuthenticationError` | API Key 未設定 | 設定 `ANTHROPIC_API_KEY` 環境變數 |
-| `Port already in use` | Port 衝突 | 改用其他 port，例如 `--server.port 8503` |
+| `AuthenticationError` | API Key 未設定 | 設定 `ANTHROPIC_API_KEY` |
+| Bot 無回應 | Token 錯誤或未啟動 | 確認 `TELEGRAM_BOT_TOKEN` 並重啟 |
+| Bot 回「沒有權限」 | user_id 不在白名單 | 清空 `ALLOWED_TELEGRAM_USERS` 或加入該 id |
+| Port 衝突 | 已有其他服務佔用 | 改用 `--server.port 8503` |
 | 回答不準確 | 問題太模糊 | 加上時間範圍或具體條件 |
-| Streamlit 空白 | session_state 問題 | 按 F5 重新整理或清除對話 |
